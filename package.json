@@ -1,0 +1,33 @@
+{
+  "name": "autopilot",
+  "version": "0.0.0",
+  "private": true,
+  "description": "A budget-aware reliability harness for production AI agents, built on RocketRide.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "setup": "node scripts/setup-engine.mjs",
+    "engine": "node scripts/start-engine.mjs",
+    "demo": "node --experimental-strip-types apps/demo-agent/cli.ts",
+    "demo:a": "node --experimental-strip-types apps/demo-agent/cli.ts --scenario A --seed 42",
+    "demo:c": "node --experimental-strip-types apps/demo-agent/cli.ts --scenario C --seed 42",
+    "demo:d": "node --experimental-strip-types apps/demo-agent/cli.ts --scenario D --seed 42",
+    "bench": "node --experimental-strip-types apps/demo-agent/bench-cli.ts --seed 42 --tasks 100",
+    "bench:quick": "node --experimental-strip-types apps/demo-agent/bench-cli.ts --seed 42 --tasks 25",
+    "test": "node --experimental-strip-types --test packages/**/*.test.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "check:seam": "node scripts/check-seam.mjs",
+    "verify": "pnpm typecheck && pnpm check:seam && pnpm test"
+  },
+  "dependencies": {
+    "rocketride": "^1.3.0",
+    "yaml": "^2.9.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "typescript": "^5.6.0"
+  }
+}

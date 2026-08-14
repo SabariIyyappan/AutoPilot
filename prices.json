@@ -1,0 +1,47 @@
+{
+  "_comment": "Declared provider list prices. ALL dollar figures in Autopilot resolve against this file — no figure is ever invented at runtime. The harness itself costs $0 to run (the chaos proxy stands in for a real provider), so these are a MODEL of cost, applied to real measured token counts. This is stated plainly in the README and docs/benchmark.md; see docs/architecture.md Q4 on why token counts are themselves estimated from character length on this build.",
+  "_units": "USD per 1,000,000 tokens",
+  "charsPerToken": 4,
+  "models": {
+    "autopilot-canned": {
+      "_note": "The chaos proxy's deterministic stand-in model. Priced as a cheap small model so budget arithmetic is realistic.",
+      "inputPerMillion": 0.15,
+      "outputPerMillion": 0.6,
+      "tier": "cheap"
+    },
+    "autopilot-canned-mid": {
+      "_note": "Stand-in for the mid tier, used by model_escalation.",
+      "inputPerMillion": 3.0,
+      "outputPerMillion": 15.0,
+      "tier": "mid"
+    },
+    "autopilot-canned-strong": {
+      "_note": "Stand-in for the strong tier, used by model_escalation.",
+      "inputPerMillion": 15.0,
+      "outputPerMillion": 75.0,
+      "tier": "strong"
+    }
+  },
+  "modelLadder": ["autopilot-canned", "autopilot-canned-mid", "autopilot-canned-strong"],
+  "providerLadder": ["primary", "secondary"],
+  "latencyMs": {
+    "_note": "Declared typical latencies per strategy, used for budget feasibility BEFORE execution. Actual measured latency is recorded separately in traces.",
+    "retry": 900,
+    "provider_fallback": 1100,
+    "model_escalation": 1800,
+    "capability_swap": 300,
+    "output_repair": 700,
+    "retrieval_refresh": 600,
+    "escalate": 0
+  },
+  "successPriors": {
+    "_note": "Declared, not learned. The plan explicitly rules out a learned ranker for v1 — these are honest static priors, stated as such.",
+    "retry": 0.55,
+    "provider_fallback": 0.85,
+    "model_escalation": 0.9,
+    "capability_swap": 0.8,
+    "output_repair": 0.88,
+    "retrieval_refresh": 0.75,
+    "escalate": 1.0
+  }
+}

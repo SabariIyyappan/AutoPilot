@@ -1,0 +1,38 @@
+# The Autopilot developer contract.
+#
+# This file IS the product surface. A developer writes no recovery code — they
+# declare the envelope within which recovery is permitted to happen, and the
+# runtime does the rest (or refuses, and escalates).
+
+budget:
+  extra_cost_usd: 0.05
+  extra_latency_ms: 4000
+  extra_tokens: 12000
+  attempts: 3
+  max_risk: MEDIUM
+
+# Ordered candidate strategies per failure class. Order expresses developer
+# preference; the budget engine then filters on affordability and re-ranks by
+# expected value. A class absent from this map has no permitted recovery and
+# escalates.
+policy:
+  PROVIDER_TRANSIENT: [retry, provider_fallback]
+  PROVIDER_UNAVAILABLE: [provider_fallback, model_escalation]
+  TOOL_TIMEOUT: [retry, capability_swap]
+  TOOL_UNAVAILABLE: [capability_swap]
+  SCHEMA_MISMATCH: [output_repair, model_escalation]
+  INVALID_TOOL_ARGS: [output_repair, retry]
+  STALE_CONTEXT: [retrieval_refresh]
+  # UNKNOWN is deliberately absent: an unclassified failure escalates rather
+  # than being guessed at.
+
+# Hard prohibitions, enforced above the budget engine. These are not
+# preferences that a large enough budget can override.
+forbidden:
+  - replay_irreversible_write
+  - retry_external_payment
+
+ranking_weights:
+  cost: 1.0
+  latency: 0.3
+  risk: 0.5

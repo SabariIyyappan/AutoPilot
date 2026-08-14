@@ -1,0 +1,29 @@
+{
+  "description": "P0 spike pipeline v2, built from real service names via getServices(). Tests: (a) whether apaevt_flow 'leave' / result._trace carries per-node output values (Q1), (b) whether a 'prompt' node with NO wired input and static instructions behaves as a literal/constant node (Q2).",
+  "version": 1,
+  "source": "in",
+  "components": [
+    {
+      "id": "in",
+      "provider": "webhook",
+      "name": "input",
+      "config": { "hideForm": true, "mode": "Source", "type": "webhook", "parameters": {} }
+    },
+    {
+      "id": "literal_probe",
+      "provider": "prompt",
+      "name": "literal_probe",
+      "config": {
+        "type": "prompt",
+        "instructions": ["AUTOPILOT_LITERAL_PROBE_VALUE_42"]
+      }
+    },
+    {
+      "id": "out",
+      "provider": "response_text",
+      "name": "output",
+      "config": { "laneName": "text" },
+      "input": [{ "lane": "text", "from": "in" }]
+    }
+  ]
+}

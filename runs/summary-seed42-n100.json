@@ -1,0 +1,62 @@
+{
+  "seed": 42,
+  "taskCount": 100,
+  "summaries": [
+    {
+      "mode": "NO_RECOVERY",
+      "tasks": 100,
+      "firstPassSuccessRate": 0.77,
+      "finalSuccessRate": 0.72,
+      "silentFailureRate": 0.05,
+      "escalationRate": 0.23,
+      "meanAttempts": 0,
+      "totalCostUsd": 0,
+      "costPerTaskUsd": 0,
+      "p50LatencyMs": 37,
+      "p95LatencyMs": 1383,
+      "reliabilityGainPerDollar": null
+    },
+    {
+      "mode": "RETRY_ONLY",
+      "tasks": 100,
+      "firstPassSuccessRate": 0.77,
+      "finalSuccessRate": 0.72,
+      "silentFailureRate": 0.05,
+      "escalationRate": 0.23,
+      "meanAttempts": 0.23,
+      "totalCostUsd": 0.00011999999999999998,
+      "costPerTaskUsd": 0.0000011999999999999997,
+      "p50LatencyMs": 53,
+      "p95LatencyMs": 2763,
+      "reliabilityGainPerDollar": 0
+    },
+    {
+      "mode": "FULL_REPLAN",
+      "tasks": 100,
+      "firstPassSuccessRate": 0.77,
+      "finalSuccessRate": 0.72,
+      "silentFailureRate": 0.05,
+      "escalationRate": 0.23,
+      "meanAttempts": 0.23,
+      "totalCostUsd": 0.00288,
+      "costPerTaskUsd": 0.000028800000000000002,
+      "p50LatencyMs": 74,
+      "p95LatencyMs": 2932,
+      "reliabilityGainPerDollar": 0
+    },
+    {
+      "mode": "AUTOPILOT",
+      "tasks": 100,
+      "firstPassSuccessRate": 0.72,
+      "finalSuccessRate": 0.86,
+      "silentFailureRate": 0,
+      "escalationRate": 0.14,
+      "meanAttempts": 0.43,
+      "totalCostUsd": 0.0018112499999999995,
+      "costPerTaskUsd": 0.000018112499999999996,
+      "p50LatencyMs": 109,
+      "p95LatencyMs": 1497,
+      "reliabilityGainPerDollar": 7729.468599033819
+    }
+  ]
+}

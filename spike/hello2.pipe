@@ -1,0 +1,32 @@
+{
+  "description": "Q2 isolation test: does a node with a static config and ZERO input[] connections still execute, purely because something downstream references it via 'from'? This is the crux of whether a literal/constant node is viable for residual pipeline synthesis.",
+  "version": 1,
+  "source": "in",
+  "components": [
+    {
+      "id": "in",
+      "provider": "webhook",
+      "name": "input",
+      "config": { "hideForm": true, "mode": "Source", "type": "webhook", "parameters": {} }
+    },
+    {
+      "id": "literal_probe",
+      "provider": "prompt",
+      "name": "literal_probe",
+      "config": {
+        "type": "prompt",
+        "instructions": ["AUTOPILOT_LITERAL_PROBE_VALUE_42"]
+      }
+    },
+    {
+      "id": "out",
+      "provider": "response_text",
+      "name": "output",
+      "config": { "laneName": "text" },
+      "input": [
+        { "lane": "text", "from": "in" },
+        { "lane": "text", "from": "literal_probe" }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+node_modules/
+dist/
+.engine/
+*.tsbuildinfo
+.DS_Store
+.env
+.env.local
+include/
+runs/*.log
+
+# Personal demo-prep script. Written BEFORE the benchmark existed, so its
+# figures are illustrative rather than measured. Kept locally, not shipped —
+# it would contradict runs/*.jsonl and docs/benchmark.md if published as-is.
+docs/demo-and-pitch.md
