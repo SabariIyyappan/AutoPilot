@@ -1,0 +1,123 @@
+{
+  "description": "Autopilot failure classifier — diagnoses RocketRide failures using RocketRide.",
+  "version": 1,
+  "source": "in",
+  "components": [
+    {
+      "id": "in",
+      "provider": "webhook",
+      "name": "trace",
+      "config": {
+        "hideForm": true,
+        "mode": "Source",
+        "type": "webhook",
+        "parameters": {}
+      },
+      "ui": {
+        "position": {
+          "x": -510,
+          "y": 0
+        },
+        "nodeType": "default",
+        "formDataValid": true
+      }
+    },
+    {
+      "id": "classify",
+      "provider": "prompt",
+      "name": "classify",
+      "config": {
+        "type": "prompt",
+        "instructions": [
+          "You are a failure classifier for an AI pipeline runtime.",
+          "Classify the failure below into EXACTLY ONE of these classes:",
+          "PROVIDER_TRANSIENT, PROVIDER_UNAVAILABLE, TOOL_TIMEOUT, TOOL_UNAVAILABLE, INVALID_TOOL_ARGS, SCHEMA_MISMATCH, STALE_CONTEXT, UNKNOWN",
+          "",
+          "Rules:",
+          "- Reply with the class name ONLY. No prose, no punctuation, no explanation.",
+          "- If the evidence is insufficient or ambiguous, reply exactly: UNKNOWN",
+          "- Never invent a class that is not in the list above.",
+          "",
+          "Failing node: reason",
+          "Node kind: LLM",
+          "Signal type: RUNTIME_ERROR",
+          "Evidence:",
+          "  - flow_error: <the real engine error trace goes here>"
+        ]
+      },
+      "ui": {
+        "position": {
+          "x": -320,
+          "y": -90
+        },
+        "nodeType": "default",
+        "formDataValid": true
+      },
+      "input": [
+        {
+          "lane": "text",
+          "from": "in"
+        }
+      ]
+    },
+    {
+      "id": "diagnoser",
+      "provider": "llm_openai_api",
+      "name": "diagnoser",
+      "config": {
+        "profile": "custom",
+        "custom": {
+          "model": "qwen2.5:3b",
+          "base_url": "http://127.0.0.1:11434/v1",
+          "apikey": "unused-local-key",
+          "modelTotalTokens": 2048,
+          "temperature": 0
+        }
+      },
+      "ui": {
+        "position": {
+          "x": -90,
+          "y": -140
+        },
+        "nodeType": "default",
+        "formDataValid": true
+      },
+      "input": [
+        {
+          "lane": "questions",
+          "from": "classify"
+        }
+      ]
+    },
+    {
+      "id": "out",
+      "provider": "response_answers",
+      "name": "out",
+      "config": {
+        "laneName": "answers"
+      },
+      "ui": {
+        "position": {
+          "x": 30,
+          "y": -220
+        },
+        "nodeType": "default",
+        "formDataValid": true
+      },
+      "input": [
+        {
+          "lane": "answers",
+          "from": "diagnoser"
+        }
+      ]
+    }
+  ],
+  "project_id": "4c76f113-1270-4254-a935-d171e5154e53",
+  "isLocked": false,
+  "snapToGrid": true,
+  "snapGridSize": [
+    10,
+    10
+  ],
+  "docRevision": 4
+}

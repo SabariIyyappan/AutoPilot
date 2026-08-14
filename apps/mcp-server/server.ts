@@ -64,9 +64,44 @@ function textResult(payload: unknown) {
   return { content: [{ type: 'text' as const, text: JSON.stringify(payload, null, 2) }] };
 }
 
-async function main() {
-  const runtime: AgentRuntime = await startAgentRuntime();
+/**
+ * LAZY runtime initialisation.
+ *
+ * Booting the runtime costs ~15-20s: it starts two fault proxies and connects
+ * to the RocketRide engine (pipeline instantiation alone is ~10.9s, measured).
+ * An MCP client expects a response to `initialize` within seconds, so doing
+ * that work before `server.connect()` gets the process killed as unresponsive
+ * — which is exactly how this first failed against a real client.
+ *
+ * So: connect the transport immediately, and pay the startup cost on the
+ * first tool call instead. Concurrent calls share one in-flight promise.
+ */
+let runtimePromise: Promise<AgentRuntime> | undefined;
 
+function getRuntime(): Promise<AgentRuntime> {
+  runtimePromise ??= startAgentRuntime().catch((err) => {
+    // Don't cache a failed boot — let the next call retry rather than
+    // wedging the server permanently because the engine was briefly down.
+    runtimePromise = undefined;
+    throw err;
+  });
+  return runtimePromise;
+}
+
+/** Turn a boot failure into an actionable message instead of a stack trace. */
+function prerequisiteError(err: unknown) {
+  const detail = err instanceof Error ? err.message : String(err);
+  return textResult({
+    succeeded: false,
+    error:
+      'Autopilot could not start. Both backing services must be running:\n' +
+      '  1. RocketRide engine on :5565   ->  pnpm engine\n' +
+      '  2. Ollama on :11434             ->  pnpm ollama\n\n' +
+      `underlying error: ${detail}`,
+  });
+}
+
+async function main() {
   const server = new McpServer({ name: 'autopilot', version: '1.0.0' });
 
   server.registerTool(
@@ -80,6 +115,12 @@ async function main() {
       inputSchema: { customerId: z.string().describe('e.g. CUSTOMER-4471') },
     },
     async ({ customerId }) => {
+      let runtime: AgentRuntime;
+      try {
+        runtime = await getRuntime();
+      } catch (err) {
+        return prerequisiteError(err);
+      }
       const run = await customerLookup(runtime, customerId);
       return textResult({
         answer: run.succeeded ? (run.outcome.finalText ?? null) : null,
@@ -103,6 +144,12 @@ async function main() {
       },
     },
     async ({ customerId, amount }) => {
+      let runtime: AgentRuntime;
+      try {
+        runtime = await getRuntime();
+      } catch (err) {
+        return prerequisiteError(err);
+      }
       const run = await chargeCustomer(runtime, customerId, amount);
       const report = autopilotReport(run);
 
@@ -128,7 +175,10 @@ async function main() {
   );
 
   const shutdown = async () => {
-    await runtime.close();
+    // Only tear down if the runtime was ever actually booted.
+    if (runtimePromise) {
+      await runtimePromise.then((r) => r.close()).catch(() => {});
+    }
     process.exit(0);
   };
   process.on('SIGINT', shutdown);
@@ -136,11 +186,9 @@ async function main() {
 
   // stdio transport: stdout is the protocol channel, so nothing may be
   // printed to it. Diagnostics go to stderr.
-  console.error(
-    `[autopilot-mcp] ready — model: ${runtime.upstream?.model ?? 'canned (no Ollama detected)'}`,
-  );
-
+  // Connect FIRST so `initialize` is answered immediately.
   await server.connect(new StdioServerTransport());
+  console.error('[autopilot-mcp] connected — runtime boots on first tool call');
 }
 
 main().catch((err) => {

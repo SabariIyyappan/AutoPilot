@@ -13,3 +13,6 @@ runs/*.log
 # it would contradict runs/*.jsonl and docs/benchmark.md if published as-is.
 docs/demo-and-pitch.md
 .rocketride/
+
+# Personal demo scripts — not product artifacts.
+docs/demo-script.md
