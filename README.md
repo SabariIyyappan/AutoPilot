@@ -1,8 +1,32 @@
 # Autopilot
 
-**A budget-aware reliability harness for production AI agents, built on RocketRide.**
+**A budget-aware reliability harness for RocketRide agents — built entirely on what RocketRide already has.**
 
-Agents fail in more ways than throwing exceptions. Providers degrade, tools time out, schemas drift, and models return answers that are plausible and wrong. Autopilot turns RocketRide's runtime observability into **bounded, verified, side-effect-safe recovery** — configured, not coded.
+## Why this exists
+
+RocketRide already gives you the hard parts of running AI pipelines:
+
+- **Observability** — per-node execution events, lane-level data, timing, resource metrics
+- **Orchestration** — a real runtime that schedules and executes pipelines
+- **Portability** — swap models, providers and tools without rebuilding the workflow
+- **Pipelines as data** — `.pipe` files are plain JSON, and the SDK accepts an in-memory pipeline object
+
+What it deliberately does **not** have is *reliability semantics*. There is no node-level retry, timeout, error handling, or conditional routing anywhere in the `.pipe` schema. When a node fails, that is the developer's problem — and every team solves it the same ad-hoc way: try/catch, a retry loop, a fallback provider, a custom validator, a human on call.
+
+**So the observation Autopilot is built on:** the runtime *already knows* what failed, where, what it cost, and what alternatives are registered. That is everything you need to make a recovery decision. Nobody was using it that way.
+
+Autopilot is a control plane that does. It is not a fork, not a patch, and not a reimplementation — **it is a harness layered on top of the existing runtime**, using only what RocketRide already exposes:
+
+| What Autopilot needs | What RocketRide already provides |
+|---|---|
+| See a failure | `apaevt_flow` events + task warnings |
+| Know what it cost | timing and resource telemetry |
+| Know the alternatives | `getServices()` component catalog |
+| Change the plan | pipelines are JSON; `use()` takes an object |
+| Run the fix | the same engine, same API |
+| **Diagnose the failure** | **a RocketRide pipeline** — we use RocketRide to diagnose RocketRide |
+
+Autopilot adds one thing on top: **bounded, verified, side-effect-safe recovery** — configured, not coded.
 
 ```
 RUN → DETECT → DIAGNOSE → SELECT → BUDGET → GATE → RECOVER → VERIFY → RESUME
@@ -19,6 +43,8 @@ budget:
 forbidden:
   - replay_irreversible_write
 ```
+
+Because there is no resume API, recovery is a **JSON diff on the pipeline** — see [how it works](#how-it-works). That mechanism exists *because* RocketRide made pipelines data, not despite it.
 
 ---
 
