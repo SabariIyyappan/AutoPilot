@@ -90,22 +90,22 @@ Start `pnpm engine` and `pnpm ollama` first, then restart Claude Desktop and ask
 
 > *"Look up the balance for CUSTOMER-4471"*
 
+![Autopilot self-healing a failed tool call in Claude Desktop — the answer returns normally while the _autopilot receipt shows status RECOVERED after a RUNTIME_ERROR diagnosed as PROVIDER_UNAVAILABLE](docs/images/mcp-self-heal.png)
+
+**The call succeeded. It also failed.** Claude got a clean answer — *"The balance for CUSTOMER-4471 is $128.40 USD."* — and never saw the outage. The `_autopilot` block is the receipt:
+
 ```jsonc
 {
-  "answer": "The balance for CUSTOMER-4471 is $128.40 USD.",
-  "succeeded": true,
-  "_autopilot": {
-    "status": "RECOVERED",
-    "failureDetected": "RUNTIME_ERROR",
-    "diagnosis": "PROVIDER_UNAVAILABLE",
-    "diagnosedBy": "rules",
-    "pipelineDiff": ["reason.config.custom.base_url -> \"http://127.0.0.1:59460/v1\""],
-    "recoveryAttempts": 1
-  }
+  "status": "RECOVERED",
+  "failureDetected": "RUNTIME_ERROR",
+  "diagnosis": "PROVIDER_UNAVAILABLE",
+  "diagnosedBy": "rules",          // rules classified it; no model needed
+  "pipelineDiff": [                 // recovery, in full: one field
+    "reason.config.custom.base_url -> \"http://127.0.0.1:59460/v1\""
+  ],
+  "recoveryAttempts": 1
 }
 ```
-
-**The call succeeded. It also failed.** The `_autopilot` block is the receipt — the caller was never exposed to the failure.
 
 Then ask it to **charge** that customer:
 
