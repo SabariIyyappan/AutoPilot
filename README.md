@@ -1,6 +1,6 @@
 # Autopilot
 
-**A budget-aware reliability harness for RocketRide agents — built entirely on what RocketRide already has.**
+**A budget-aware reliability harness for AI agents — built entirely on what RocketRide (pipeline to build agentic AI systems) already has.**
 
 ## Why this exists
 
@@ -44,7 +44,7 @@ forbidden:
   - replay_irreversible_write
 ```
 
-Because there is no resume API, recovery is a **JSON diff on the pipeline** — see [how it works](#how-it-works). That mechanism exists *because* RocketRide made pipelines data, not despite it.
+Because there is no resume API, recovery is a **JSON diff on the pipeline** — see [how it works](https://youtu.be/-olZBcH6POQ). That mechanism exists *because* RocketRide made pipelines data, not despite it.
 
 ---
 
