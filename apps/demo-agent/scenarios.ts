@@ -51,8 +51,43 @@ export interface Scenario {
 const CANNED_ANSWER = 'CUSTOMER-4471 balance is $128.40';
 const CANNED_JSON = JSON.stringify({ customerId: 'CUSTOMER-4471', balance: 128.4 });
 
+/**
+ * The agent's retrieved context.
+ *
+ * A real model cannot answer "what is CUSTOMER-4471's balance" out of thin
+ * air — and it should not pretend to. Grounding the agent in actual records
+ * is what makes it a real agent rather than a prompt, and it is what lets the
+ * verifier check a genuinely earned answer instead of a canned string.
+ *
+ * This stands in for a retrieval step; the reliability behaviour under test
+ * is identical either way.
+ */
+const CUSTOMER_RECORDS = `Customer records:
+- CUSTOMER-4471: name="Dana Whitfield", balance=128.40 USD, status=active
+- CUSTOMER-4472: name="Amir Haddad", balance=0.00 USD, status=closed
+- CUSTOMER-4473: name="Lena Ortiz", balance=982.15 USD, status=active`;
+
+/** Instructions for the plain-answer scenarios (A, D). */
+const ANSWER_INSTRUCTIONS = [
+  CUSTOMER_RECORDS,
+  'Answer using ONLY the records above.',
+  'Reply in one short sentence and always include the customer id verbatim.',
+];
+
+/** Instructions for the structured-output scenario (C). */
+const JSON_INSTRUCTIONS = [
+  CUSTOMER_RECORDS,
+  'Return ONLY a JSON object, no prose and no code fences.',
+  'It must have exactly these keys: "customerId" (string) and "balance" (number).',
+  'Example: {"customerId": "CUSTOMER-9999", "balance": 12.34}',
+];
+
 /** in -> ask -> reason(llm via chaos proxy) -> out */
-function llmPipeline(baseUrl: string, nodeId = 'reason'): PipelineConfig {
+function llmPipeline(
+  baseUrl: string,
+  nodeId = 'reason',
+  instructions: string[] = ANSWER_INSTRUCTIONS,
+): PipelineConfig {
   return {
     version: 1,
     source: 'in',
@@ -65,7 +100,7 @@ function llmPipeline(baseUrl: string, nodeId = 'reason'): PipelineConfig {
       {
         id: 'ask',
         provider: 'prompt',
-        config: { type: 'prompt', instructions: ['Answer the customer question precisely.'] },
+        config: { type: 'prompt', instructions },
         input: [{ lane: 'text', from: 'in' }],
       },
       {
@@ -135,7 +170,7 @@ export const SCENARIOS: Scenario[] = [
     needsSecondary: false,
     contracts: SAFE_LLM_CONTRACTS,
     verifier: { type: 'schema', ref: 'customerId,balance' },
-    pipeline: (e) => llmPipeline(e.primary),
+    pipeline: (e) => llmPipeline(e.primary, 'reason', JSON_INSTRUCTIONS),
   },
   {
     id: 'D',

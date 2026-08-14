@@ -18,7 +18,7 @@ import { initialState, step } from '../core/machine.ts';
 import type { MachineState } from '../core/machine-types.ts';
 import type { RecoveryContract, VerifierSpec } from '../core/types.ts';
 import { detect } from '../diagnosis/detector.ts';
-import { diagnose } from '../diagnosis/diagnoser.ts';
+import { diagnoseAsync, type LlmClassifier } from '../diagnosis/diagnoser.ts';
 import { verify } from '../verify/verify.ts';
 
 export interface TraceEntry {
@@ -61,6 +61,12 @@ export interface OrchestratorOptions {
    * per distinct pipeline instead of once per task.
    */
   sharedClient?: EngineClient;
+  /**
+   * Optional model-backed classifier, consulted ONLY when the deterministic
+   * rules return UNKNOWN. Supplied by the caller so the control plane never
+   * has to know an engine exists — see the seam note in diagnosis/diagnoser.ts.
+   */
+  llmClassifier?: LlmClassifier;
 }
 
 export interface RunOutcome {
@@ -182,8 +188,12 @@ export async function runWithAutopilot(
     [state] = step(state, { kind: 'FAILURE_DETECTED', signal: signalToUse });
 
     // ── Diagnose ──────────────────────────────────────────────────────────
-    const failureClass = diagnose(signalToUse, { isToolNode: opts.isToolNode });
-    log('diagnosed', { failureClass });
+    const { failureClass, source: diagnosisSource } = await diagnoseAsync(
+      signalToUse,
+      { isToolNode: opts.isToolNode },
+      opts.llmClassifier,
+    );
+    log('diagnosed', { failureClass, source: diagnosisSource });
     [state] = step(state, { kind: 'DIAGNOSED', failureClass });
     if (state.phase === 'ESCALATED') {
       return finish(state, 'escalated_on_diagnosis');

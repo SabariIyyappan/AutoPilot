@@ -8,6 +8,7 @@
  */
 import path from 'node:path';
 import { startFaultProxy } from '../../packages/chaos/proxy.ts';
+import { detectUpstream } from '../../packages/chaos/upstream.ts';
 import { budgetFromConfig, loadConfig, loadPrices } from '../../packages/control/config.ts';
 import { runWithAutopilot } from '../../packages/orchestrator/orchestrator.ts';
 import { scenarioById, SCENARIOS, cannedResponder } from './scenarios.ts';
@@ -52,6 +53,13 @@ async function main() {
   const prices = loadPrices(path.join(ROOT, 'prices.json'));
   const budget = budgetFromConfig(config);
 
+  // Use a REAL local model when one is reachable. Faults stay ours either
+  // way; only the healthy path changes.
+  const upstream = await detectUpstream();
+  const forward = upstream
+    ? { forwardTo: upstream.baseUrl, forwardModel: upstream.model }
+    : {};
+
   // PRIMARY endpoint — the one that faults. Real HTTP, real failures, $0.
   const primary = await startFaultProxy({
     seed,
@@ -60,6 +68,7 @@ async function main() {
     faultAttempts: scenario.faultAttempts,
     taskIdOf: () => `scenario-${scenario.id}`,
     respond: cannedResponder(scenario.id),
+    ...forward,
   });
 
   // SECONDARY endpoint — genuinely healthy. Provider fallback rewrites the
@@ -71,6 +80,7 @@ async function main() {
         profile: {}, // never faults
         taskIdOf: () => `scenario-${scenario.id}-secondary`,
         respond: cannedResponder(scenario.id),
+        ...forward,
       })
     : undefined;
 
@@ -82,7 +92,14 @@ async function main() {
   console.log(`${C.dim('faults')}  ${JSON.stringify(scenario.faults)}`);
   console.log(
     `${C.dim('budget')}  $${budget.remainingCostUsd} / ${budget.remainingLatencyMs}ms / ` +
-      `${budget.remainingAttempts} attempts / max risk ${budget.maxRisk}\n`,
+      `${budget.remainingAttempts} attempts / max risk ${budget.maxRisk}`,
+  );
+  console.log(
+    `${C.dim('model')}   ` +
+      (upstream
+        ? `${C.green(upstream.model)} ${C.dim(`(real model via ${upstream.baseUrl})`)}`
+        : C.yellow('canned responder — run `pnpm ollama` for a real model')) +
+      '\n',
   );
 
   try {

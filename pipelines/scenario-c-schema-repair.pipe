@@ -1,0 +1,70 @@
+{
+  "description": "Scenario C — schema drift. Same shape as A; the failure is in the CONTENT, caught by a verifier.",
+  "version": 1,
+  "source": "in",
+  "components": [
+    {
+      "id": "in",
+      "provider": "webhook",
+      "name": "input",
+      "config": {
+        "hideForm": true,
+        "mode": "Source",
+        "type": "webhook",
+        "parameters": {}
+      }
+    },
+    {
+      "id": "ask",
+      "provider": "prompt",
+      "name": "ask",
+      "config": {
+        "type": "prompt",
+        "instructions": [
+          "Answer the customer question precisely."
+        ]
+      },
+      "input": [
+        {
+          "lane": "text",
+          "from": "in"
+        }
+      ]
+    },
+    {
+      "id": "reason",
+      "provider": "llm_openai_api",
+      "name": "reason",
+      "config": {
+        "profile": "custom",
+        "custom": {
+          "model": "autopilot-canned",
+          "base_url": "http://127.0.0.1:PORT/v1",
+          "apikey": "unused-local-key",
+          "modelTotalTokens": 4096
+        }
+      },
+      "input": [
+        {
+          "lane": "questions",
+          "from": "ask"
+        }
+      ]
+    },
+    {
+      "id": "out",
+      "provider": "response_answers",
+      "name": "output",
+      "config": {
+        "laneName": "answers"
+      },
+      "input": [
+        {
+          "lane": "answers",
+          "from": "reason"
+        }
+      ]
+    }
+  ],
+  "project_id": "741e1d1a-382b-49e3-b10a-b4fcaeb4c84a"
+}

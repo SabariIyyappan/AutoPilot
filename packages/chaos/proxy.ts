@@ -16,15 +16,21 @@
  *     maps to 401 for this reason: it needs to be visible on attemptIndex 0,
  *     not absorbed by the engine's own retry loop.
  *
- * In the no-fault case, the proxy returns a deterministic canned response
- * keyed off the request content — not a real model call. This is
- * intentional: the benchmark needs known-correct outputs (ground truth) to
- * measure silent-failure and wrong-recovery rates, and a real LLM's
- * nondeterminism would undermine that. See packages/chaos/README section in
- * docs/architecture.md.
+ * The no-fault path has TWO modes:
+ *
+ *   - `forwardTo` SET (demo / MCP server): the request is forwarded to a real
+ *     OpenAI-compatible model (Ollama) and its genuine response returned. The
+ *     agent is a real LLM agent; only the faults are ours.
+ *   - `forwardTo` UNSET (benchmark): a deterministic canned response keyed off
+ *     the request. Required, not lazy — measuring silent-failure and
+ *     wrong-recovery rates needs known-correct ground truth for every task,
+ *     which a real model's nondeterminism destroys. See docs/benchmark.md.
+ *
+ * Faults take precedence over forwarding in both modes.
  */
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { fault, isEngineRetried, type FaultProfile, type FaultType } from './schedule.ts';
+import { resolveModelTier } from './upstream.ts';
 
 export interface CannedResponder {
   (requestBody: unknown): string;
@@ -38,6 +44,33 @@ export interface ProxyOptions {
   /** Extracts a stable taskId from the request (e.g. a header or prompt hash). */
   taskIdOf: (requestBody: unknown) => string;
   respond: CannedResponder;
+  /**
+   * When set, healthy (non-faulted) requests are FORWARDED to this real
+   * OpenAI-compatible endpoint (e.g. Ollama at http://127.0.0.1:11434/v1)
+   * and the genuine model response is returned.
+   *
+   * This is what puts a real LLM in the agent without giving up fault
+   * injection: faults are still ours and still seeded, but the success path
+   * is a real model rather than a canned string.
+   *
+   * Left UNSET by the benchmark on purpose. Measuring silent-failure rate
+   * requires a known-correct answer for every task, which a real model's
+   * nondeterminism destroys. See docs/benchmark.md.
+   */
+  forwardTo?: string;
+  /**
+   * Default upstream model, used when the pipeline's requested model is not a
+   * known logical tier.
+   *
+   * The pipeline declares a logical tier (`autopilot-canned`) that the real
+   * upstream has never heard of, so it is resolved through MODEL_TIERS before
+   * forwarding. That indirection is what makes `model_escalation` REAL: the
+   * rewrite changes the tier, the tier resolves to a genuinely different
+   * model, and the escalated attempt actually runs on it.
+   */
+  forwardModel?: string;
+  /** Abort a forwarded request after this long. Default 60s. */
+  forwardTimeoutMs?: number;
   /**
    * Restrict faulting to specific attempt indices (0-based).
    *
@@ -109,6 +142,42 @@ function cannedOpenAIResponse(text: string): string {
 }
 
 /**
+ * Forward a healthy request to a real OpenAI-compatible model server and
+ * return its raw response body.
+ *
+ * `stream` is forced false: the caller only reaches here on the
+ * answer-producing call, and we must not start an SSE stream the engine
+ * isn't expecting at this point.
+ */
+async function forwardUpstream(
+  baseUrl: string,
+  body: unknown,
+  timeoutMs: number,
+  model?: string,
+): Promise<string> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(`${baseUrl.replace(/\/$/, '')}/chat/completions`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        ...(body as Record<string, unknown>),
+        stream: false,
+        ...(model ? { model } : {}),
+      }),
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      throw new Error(`upstream returned HTTP ${res.status}`);
+    }
+    return await res.text();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
  * Per-taskId call counters. In-memory, per-process — fine for a local chaos
  * harness that lives for the duration of one benchmark run.
  */
@@ -158,6 +227,11 @@ export function startFaultProxy(opts: ProxyOptions) {
       // changes how many probes it sends.
       const isAnswerCall = (body as { stream?: unknown })?.stream === false;
       if (!isAnswerCall) {
+        // Probe / streaming-attempt calls are never faulted, and are always
+        // answered locally. Forwarding a `stream: true` call to a real model
+        // would return SSE chunks, which would change the engine's control
+        // flow (it would stop falling back to the non-streaming call) and
+        // move the answer off the call our fault schedule keys on.
         res.writeHead(200, { 'content-type': 'application/json' });
         res.end(cannedOpenAIResponse(opts.respond(body)));
         return;
@@ -181,6 +255,40 @@ export function startFaultProxy(opts: ProxyOptions) {
 
       if (f) {
         faultResponse(f, res);
+        return;
+      }
+
+      // ── Healthy path ────────────────────────────────────────────────────
+      if (opts.forwardTo) {
+        forwardUpstream(
+          opts.forwardTo,
+          body,
+          opts.forwardTimeoutMs ?? 60_000,
+          // Resolve the logical tier the PIPELINE asked for on this request,
+          // so an escalated attempt reaches a genuinely different model.
+          resolveModelTier(
+            (body as { model?: unknown })?.model,
+            opts.forwardModel ?? 'qwen2.5:3b',
+          ),
+        )
+          .then((upstream) => {
+            res.writeHead(200, { 'content-type': 'application/json' });
+            res.end(upstream);
+          })
+          .catch((err) => {
+            // A dead upstream is a REAL provider failure, not a bug to hide.
+            // Surfacing it as a 502 lets the harness see and handle it the
+            // same way it would a genuine outage.
+            res.writeHead(502, { 'content-type': 'application/json' });
+            res.end(
+              JSON.stringify({
+                error: {
+                  message: `upstream model unreachable: ${err instanceof Error ? err.message : String(err)}`,
+                  type: 'server_error',
+                },
+              }),
+            );
+          });
         return;
       }
 

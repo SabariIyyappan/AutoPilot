@@ -1,0 +1,70 @@
+{
+  "description": "Scenario D — the node is named `payment` and declared IRREVERSIBLE_WRITE in contracts, so the gate refuses to replay it.",
+  "version": 1,
+  "source": "in",
+  "components": [
+    {
+      "id": "in",
+      "provider": "webhook",
+      "name": "input",
+      "config": {
+        "hideForm": true,
+        "mode": "Source",
+        "type": "webhook",
+        "parameters": {}
+      }
+    },
+    {
+      "id": "ask",
+      "provider": "prompt",
+      "name": "ask",
+      "config": {
+        "type": "prompt",
+        "instructions": [
+          "Answer the customer question precisely."
+        ]
+      },
+      "input": [
+        {
+          "lane": "text",
+          "from": "in"
+        }
+      ]
+    },
+    {
+      "id": "payment",
+      "provider": "llm_openai_api",
+      "name": "payment",
+      "config": {
+        "profile": "custom",
+        "custom": {
+          "model": "autopilot-canned",
+          "base_url": "http://127.0.0.1:PORT/v1",
+          "apikey": "unused-local-key",
+          "modelTotalTokens": 4096
+        }
+      },
+      "input": [
+        {
+          "lane": "questions",
+          "from": "ask"
+        }
+      ]
+    },
+    {
+      "id": "out",
+      "provider": "response_answers",
+      "name": "output",
+      "config": {
+        "laneName": "answers"
+      },
+      "input": [
+        {
+          "lane": "answers",
+          "from": "payment"
+        }
+      ]
+    }
+  ],
+  "project_id": "61b0d235-c189-4f5c-8a2c-b77f9f67eb66"
+}

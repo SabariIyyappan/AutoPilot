@@ -41,19 +41,99 @@ Full method, results and six stated limitations: **[docs/benchmark.md](docs/benc
 
 ---
 
+## Use it from Claude Desktop
+
+Autopilot ships as an **MCP server**. A real client calls a tool, the agent pipeline fails internally, and the caller receives a working answer — or an honest escalation.
+
+```jsonc
+// claude_desktop_config.json  (Settings → Developer → Edit Config)
+{
+  "mcpServers": {
+    "autopilot": {
+      "command": "node",
+      "args": [
+        "--experimental-strip-types",
+        "D:\\code\\rocketride\\apps\\mcp-server\\server.ts"
+      ]
+    }
+  }
+}
+```
+
+Start `pnpm engine` and `pnpm ollama` first, then restart Claude Desktop and ask:
+
+> *"Look up the balance for CUSTOMER-4471"*
+
+```jsonc
+{
+  "answer": "The balance for CUSTOMER-4471 is $128.40 USD.",
+  "succeeded": true,
+  "_autopilot": {
+    "status": "RECOVERED",
+    "failureDetected": "RUNTIME_ERROR",
+    "diagnosis": "PROVIDER_UNAVAILABLE",
+    "diagnosedBy": "rules",
+    "pipelineDiff": ["reason.config.custom.base_url -> \"http://127.0.0.1:59460/v1\""],
+    "recoveryAttempts": 1
+  }
+}
+```
+
+**The call succeeded. It also failed.** The `_autopilot` block is the receipt — the caller was never exposed to the failure.
+
+Then ask it to **charge** that customer:
+
+```jsonc
+{
+  "succeeded": false,
+  "error": "Payment could not be confirmed and was NOT retried. This operation is
+            irreversible, so Autopilot cannot safely replay it — the charge may or
+            may not have been applied. Escalated for human review.",
+  "requiresHumanReview": true,
+  "_autopilot": {
+    "status": "ESCALATED",
+    "recoveryAttempts": 0,
+    "rejected": [
+      "provider_fallback: blocked: \"payment\" is IRREVERSIBLE_WRITE — autonomous recovery refused",
+      "model_escalation: blocked: \"payment\" is IRREVERSIBLE_WRITE — autonomous recovery refused"
+    ]
+  }
+}
+```
+
+Both strategies were **affordable**. Both were refused — by safety, not budget. A harness that hid this failure would be worse than no harness.
+
+Verify the whole loop without a GUI:
+
+```bash
+pnpm mcp:smoke      # drives the server over real stdio JSON-RPC, 8 assertions
+pnpm mcp:inspect    # MCP Inspector UI
+```
+
+---
+
 ## Quick start
 
 **Requirements:** Node ≥ 20, pnpm ≥ 9. **No API keys. No accounts. No cloud. $0.**
 
 ```bash
 pnpm install
-pnpm setup      # downloads the MIT engine (~180MB, one time)
-pnpm engine     # starts it on :5565 — leave this running
+pnpm setup         # RocketRide engine (~180MB, MIT)
+pnpm setup:ollama  # local model, ~2.9GB — installs to D:\tools\ollama
+```
+
+Neither installer writes to `C:`. Ollama's official installer hardcodes `C:\Users\...`, so we use the standalone build with an explicit location (override via `AUTOPILOT_OLLAMA_HOME`).
+
+Then, in two terminals:
+
+```bash
+pnpm engine     # RocketRide on :5565
+pnpm ollama     # local model on :11434
 ```
 
 First engine boot resolves Python dependencies and takes a few minutes. Later boots take seconds.
 
-Then, **in a second terminal**:
+Then:
 
 ```bash
 pnpm demo:d     # the one to watch first
@@ -205,7 +285,28 @@ Every strategy is a deterministic, printable, testable JSON transformation:
 | `output_repair` | prepend a repair pass |
 | `escalate` | emit nothing, hand to a human |
 
-**No model decides any of this.** That's why it's reproducible enough to benchmark honestly.
+**No model decides *which recovery to run*.** That's why it stays reproducible enough to benchmark honestly.
+
+### Where the LLM does sit
+
+Two places, and the boundary between them is deliberate:
+
+| Stage | Who decides | Why |
+|---|---|---|
+| **Detect** | deterministic | Never ask a model whether HTTP 401 is a failure. |
+| **Diagnose** | rules first, **then an LLM** | Known signatures are classified for free. Anything rules return `UNKNOWN` for goes to a local model — *this* is "an LLM reads the trace and infers the cause". |
+| **Policy / Budget / Gate** | deterministic | These encode the developer's declared limits and safety. A model must never widen what recovery is permitted. |
+| **Verify** | deterministic | A model grading its own recovery is not verification. |
+
+The diagnoser is itself a **RocketRide pipeline** — we use RocketRide to diagnose RocketRide failures:
+
+```
+webhook(trace) → prompt(classification rules) → llm_openai_api → response_answers
+```
+
+Its output is **parsed, not obeyed**. Only an exact, unambiguous match against the eight-class enum is accepted; prose, invented classes, multiple classes, an injected instruction, or a timeout all collapse to `UNKNOWN` → escalate. Tested adversarially — including that `"this is not PROVIDER_TRANSIENT"` is rejected rather than read as selecting it.
+
+Responses report `diagnosedBy: "rules" | "llm"`, so the model's contribution is measurable rather than assumed.
 
 One refinement worth noting: upstream nodes that are *free* to recompute (pure transforms) are re-run rather than cached — cheaper than plumbing values back in. Only expensive upstream work is preserved.
 
@@ -270,10 +371,12 @@ The control plane is tested with **no engine running** — that's the point of t
 
 **Not built:**
 - **Scenario B (capability substitution).** Designed and unit-tested — a real external MCP server failing over to RocketRide's native `tool_filesystem`. The fault-injecting MCP server exists; it isn't wired to a live pipeline yet.
-- **Semantic / LLM-based diagnosis.** Deliberately excluded: non-deterministic, costs money, and would make the benchmark irreproducible. It's a documented plugin point.
 - **The web report UI.** Scoped as stretch; the benchmark table was the priority.
 
-**Honest limitation:** the provider is a deterministic local stand-in, not a real model. That's a deliberate trade — measuring silent-failure rate *requires* known-correct answers, which a real model's nondeterminism would defeat. These numbers measure the recovery control plane, not model quality. All six limitations are in [docs/benchmark.md](docs/benchmark.md).
+**Honest limitations:**
+- **The benchmark uses a deterministic stand-in, not a real model** — and always will. Measuring silent-failure rate *requires* known-correct answers for every task, which a real model's nondeterminism destroys. The demo and MCP server use a real model; the benchmark deliberately does not. Both modes share the same fault injector, so the recovery logic under test is identical.
+- **Dollar figures are modelled, not spent.** They resolve against `prices.json` applied to real call volumes. The harness costs $0 to run.
+- All limitations: [docs/benchmark.md](docs/benchmark.md).
 
 ---
 

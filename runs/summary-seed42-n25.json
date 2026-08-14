@@ -12,8 +12,8 @@
       "meanAttempts": 0,
       "totalCostUsd": 0,
       "costPerTaskUsd": 0,
-      "p50LatencyMs": 24,
-      "p95LatencyMs": 1474,
+      "p50LatencyMs": 80,
+      "p95LatencyMs": 1569,
       "reliabilityGainPerDollar": null
     },
     {
@@ -26,8 +26,8 @@
       "meanAttempts": 0.24,
       "totalCostUsd": 0.00003,
       "costPerTaskUsd": 0.0000012,
-      "p50LatencyMs": 28,
-      "p95LatencyMs": 2419,
+      "p50LatencyMs": 86,
+      "p95LatencyMs": 2672,
       "reliabilityGainPerDollar": 0
     },
     {
@@ -40,8 +40,8 @@
       "meanAttempts": 0.24,
       "totalCostUsd": 0.0007199999999999999,
       "costPerTaskUsd": 0.0000288,
-      "p50LatencyMs": 31,
-      "p95LatencyMs": 2731,
+      "p50LatencyMs": 285,
+      "p95LatencyMs": 3254,
       "reliabilityGainPerDollar": 0
     },
     {
@@ -54,8 +54,8 @@
       "meanAttempts": 0.44,
       "totalCostUsd": 0.00047325,
       "costPerTaskUsd": 0.00001893,
-      "p50LatencyMs": 35,
-      "p95LatencyMs": 9249,
+      "p50LatencyMs": 863,
+      "p95LatencyMs": 10029,
       "reliabilityGainPerDollar": 6339.144215530903
     }
   ]

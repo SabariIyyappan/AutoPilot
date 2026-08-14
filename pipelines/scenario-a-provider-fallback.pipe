@@ -1,0 +1,70 @@
+{
+  "description": "Scenario A — provider failure. base_url points at the primary endpoint; recovery rewrites it to a healthy secondary.",
+  "version": 1,
+  "source": "in",
+  "components": [
+    {
+      "id": "in",
+      "provider": "webhook",
+      "name": "input",
+      "config": {
+        "hideForm": true,
+        "mode": "Source",
+        "type": "webhook",
+        "parameters": {}
+      }
+    },
+    {
+      "id": "ask",
+      "provider": "prompt",
+      "name": "ask",
+      "config": {
+        "type": "prompt",
+        "instructions": [
+          "Answer the customer question precisely."
+        ]
+      },
+      "input": [
+        {
+          "lane": "text",
+          "from": "in"
+        }
+      ]
+    },
+    {
+      "id": "reason",
+      "provider": "llm_openai_api",
+      "name": "reason",
+      "config": {
+        "profile": "custom",
+        "custom": {
+          "model": "autopilot-canned",
+          "base_url": "http://127.0.0.1:PORT/v1",
+          "apikey": "unused-local-key",
+          "modelTotalTokens": 4096
+        }
+      },
+      "input": [
+        {
+          "lane": "questions",
+          "from": "ask"
+        }
+      ]
+    },
+    {
+      "id": "out",
+      "provider": "response_answers",
+      "name": "output",
+      "config": {
+        "laneName": "answers"
+      },
+      "input": [
+        {
+          "lane": "answers",
+          "from": "reason"
+        }
+      ]
+    }
+  ],
+  "project_id": "641a676e-283d-4013-a47b-51b253f6a3a5"
+}

@@ -12,3 +12,4 @@ runs/*.log
 # figures are illustrative rather than measured. Kept locally, not shipped —
 # it would contradict runs/*.jsonl and docs/benchmark.md if published as-is.
 docs/demo-and-pitch.md
+.rocketride/

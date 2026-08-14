@@ -114,6 +114,99 @@ test('non-answer calls (probe / streaming) are never faulted', async () => {
   }
 });
 
+test('forwardTo: healthy requests reach the real upstream and its response is returned', async () => {
+  // Stand-in for Ollama. Proves the proxy genuinely forwards rather than
+  // fabricating, and that it strips `stream` so no SSE stream is started.
+  const seen: Array<Record<string, unknown>> = [];
+  const upstream = await startFaultProxy({
+    seed: 1,
+    nodeId: 'upstream',
+    profile: {},
+    taskIdOf: () => 'up',
+    respond: (body) => {
+      seen.push(body as Record<string, unknown>);
+      return 'REAL_MODEL_ANSWER';
+    },
+  });
+
+  const proxy = await startFaultProxy({
+    seed: 1,
+    nodeId: 'reason',
+    profile: {},
+    taskIdOf: () => 'task-a',
+    respond: () => 'CANNED_SHOULD_NOT_APPEAR',
+    forwardTo: upstream.url,
+  });
+
+  try {
+    const { status, text } = await post(proxy.url, { messages: [] });
+    assert.equal(status, 200);
+    const parsed = JSON.parse(text);
+    assert.equal(parsed.choices[0].message.content, 'REAL_MODEL_ANSWER');
+    assert.equal(seen.length, 1, 'upstream must actually have been called');
+    assert.equal(seen[0]!.stream, false, 'forwarded request must not request streaming');
+  } finally {
+    await proxy.close();
+    await upstream.close();
+  }
+});
+
+test('forwardTo: a fault still wins over forwarding', async () => {
+  const proxy = await startFaultProxy({
+    seed: 1,
+    nodeId: 'reason',
+    profile: { provider_unavailable: 1.0 },
+    taskIdOf: () => 'task-a',
+    respond: () => 'unused',
+    forwardTo: 'http://127.0.0.1:9/v1', // would fail if ever contacted
+  });
+  try {
+    const { status } = await post(proxy.url, { messages: [] });
+    assert.equal(status, 401, 'fault injection must take precedence over the upstream');
+  } finally {
+    await proxy.close();
+  }
+});
+
+test('forwardTo: an unreachable upstream surfaces as a real 502, not a fake success', async () => {
+  const proxy = await startFaultProxy({
+    seed: 1,
+    nodeId: 'reason',
+    profile: {},
+    taskIdOf: () => 'task-a',
+    respond: () => 'CANNED_SHOULD_NOT_APPEAR',
+    forwardTo: 'http://127.0.0.1:9/v1', // nothing listens on port 9
+    forwardTimeoutMs: 2000,
+  });
+  try {
+    const { status, text } = await post(proxy.url, { messages: [] });
+    assert.equal(status, 502);
+    assert.doesNotMatch(text, /CANNED_SHOULD_NOT_APPEAR/, 'must not silently fall back to canned output');
+  } finally {
+    await proxy.close();
+  }
+});
+
+test('BENCHMARK GUARANTEE: with forwardTo unset, behaviour is byte-identical to before', async () => {
+  // The benchmark depends on this. If forwarding ever leaked into the
+  // default path, silent-failure rate would become unmeasurable.
+  const proxy = await startFaultProxy({
+    seed: 42,
+    nodeId: 'reason',
+    profile: {},
+    taskIdOf: () => 'task-a',
+    respond: () => 'DETERMINISTIC',
+  });
+  try {
+    const a = await post(proxy.url, { messages: [] });
+    const b = await post(proxy.url, { messages: [] });
+    assert.equal(JSON.parse(a.text).choices[0].message.content, 'DETERMINISTIC');
+    assert.equal(JSON.parse(b.text).choices[0].message.content, 'DETERMINISTIC');
+  } finally {
+    await proxy.close();
+  }
+});
+
 test('generation scoping: a transient fault clears on the next pipeline run', async () => {
   const proxy = await startFaultProxy({
     seed: 1,

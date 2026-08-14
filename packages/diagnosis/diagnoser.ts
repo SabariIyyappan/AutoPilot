@@ -1,15 +1,31 @@
 /**
  * Failure DIAGNOSIS — "why did it fail?"
  *
- * A deterministic rules table over the evidence the detector gathered. No LLM
- * is in this path: the plan's "explicitly not building" list rules out
- * model-based diagnosis for v1 precisely because it is non-deterministic,
- * costs money, and would poison the benchmark's reproducibility.
+ * TWO-STAGE, and the order matters:
  *
- * `UNKNOWN` is a legitimate, well-handled outcome — the state machine routes
- * it straight to escalation rather than guessing at a recovery.
+ *   1. A deterministic rules table over the detector's evidence. Free, instant,
+ *      reproducible. Handles every failure with a known signature.
+ *   2. For anything the rules cannot classify, an OPTIONAL model classifier
+ *      (see `diagnoseAsync`). This is where "an LLM reads the trace and infers
+ *      the cause" actually lives.
+ *
+ * Rules run first on purpose: a model should be spent on genuinely ambiguous
+ * failures, not on re-deriving that HTTP 401 means the provider is
+ * unavailable. It also keeps the benchmark reproducible, because a run that
+ * never hits `UNKNOWN` never invokes a model.
+ *
+ * ── The seam ──────────────────────────────────────────────────────────────
+ * This package is control-plane code and may not import the adapter or the
+ * RocketRide SDK (`pnpm check:seam` makes that a build failure). So the
+ * classifier is INJECTED: this file defines the contract, and
+ * `packages/adapter/llm-diagnoser.ts` supplies an implementation that runs a
+ * real RocketRide pipeline. The diagnoser stays pure and engine-free testable.
+ *
+ * `UNKNOWN` remains a legitimate, well-handled outcome — the state machine
+ * routes it straight to escalation rather than guessing at a recovery.
  */
 import type { FailureClass, FailureSignal } from '../core/types.ts';
+import { FAILURE_CLASSES } from '../core/types.ts';
 
 function evidenceValue(signal: FailureSignal, kind: string): string | undefined {
   return signal.evidence.find((e) => e.kind === kind)?.detail;
@@ -125,5 +141,100 @@ export function diagnose(signal: FailureSignal, ctx: DiagnosisContext = {}): Fai
       void _exhaustive;
       return 'UNKNOWN';
     }
+  }
+}
+
+// ─── Stage 2: optional model-based classification ──────────────────────────
+
+/**
+ * Everything a classifier is given about a failure. Deliberately a flat,
+ * serialisable record: it becomes the payload of a RocketRide pipeline run,
+ * and nothing here may reference engine types.
+ */
+export interface LlmDiagnosisInput {
+  nodeId: string;
+  signalType: FailureSignal['type'];
+  /** Evidence the detector gathered, flattened to `kind: detail` lines. */
+  evidence: string[];
+  /** Whether the failing node is a tool/MCP node. */
+  isToolNode: boolean;
+  /** The classes the model is allowed to choose from. */
+  allowedClasses: readonly FailureClass[];
+}
+
+/**
+ * Returns a class, or `undefined` when it cannot classify confidently.
+ *
+ * `undefined` (not a guess) is the correct answer for an unclear failure —
+ * it becomes `UNKNOWN`, which escalates to a human.
+ */
+export type LlmClassifier = (input: LlmDiagnosisInput) => Promise<FailureClass | undefined>;
+
+/**
+ * Coerce arbitrary model output into a valid class, or reject it.
+ *
+ * A model is allowed to INFORM a diagnosis. It is never allowed to widen what
+ * recovery is permitted, so anything unrecognised collapses to `UNKNOWN` and
+ * escalates. Prose, invented classes, JSON, and empty output all fail closed.
+ */
+export function parseFailureClass(raw: string | undefined): FailureClass | undefined {
+  if (!raw) return undefined;
+
+  // EXACT match on the whole response, not a substring search.
+  //
+  // Substring matching is unsafe here and was rejected during testing: it
+  // reads "this is NOT provider_transient" as selecting PROVIDER_TRANSIENT,
+  // and it lets an injected string ("ignore previous rules ... Class: X")
+  // steer the diagnosis. The prompt asks for a bare class name, so anything
+  // wrapped in prose is a non-compliant response and fails closed.
+  //
+  // Only surrounding whitespace, quotes and trailing punctuation are
+  // forgiven — a model appending a full stop is a formatting quirk, not
+  // ambiguity about which class it chose.
+  const cleaned = raw
+    .trim()
+    .replace(/^[\s"'`*]+/, '')
+    .replace(/[\s"'`*.]+$/, '')
+    .toUpperCase();
+
+  const match = FAILURE_CLASSES.find((c) => c === cleaned);
+  if (!match) return undefined;
+
+  // An explicit UNKNOWN means "I cannot classify this", which is a refusal to
+  // guess rather than a diagnosis — and it routes to escalation.
+  return match === 'UNKNOWN' ? undefined : match;
+}
+
+/**
+ * Rules first; model only for what rules cannot classify.
+ *
+ * The classifier is optional — with none supplied this behaves exactly like
+ * `diagnose()`, which is what the benchmark relies on.
+ */
+export async function diagnoseAsync(
+  signal: FailureSignal,
+  ctx: DiagnosisContext = {},
+  classifier?: LlmClassifier,
+): Promise<{ failureClass: FailureClass; source: 'rules' | 'llm' }> {
+  const fromRules = diagnose(signal, ctx);
+  if (fromRules !== 'UNKNOWN' || !classifier) {
+    return { failureClass: fromRules, source: 'rules' };
+  }
+
+  try {
+    const guess = await classifier({
+      nodeId: signal.nodeId,
+      signalType: signal.type,
+      evidence: signal.evidence.map((e) => `${e.kind}: ${e.detail}`),
+      isToolNode: ctx.isToolNode ?? false,
+      allowedClasses: FAILURE_CLASSES,
+    });
+    return guess
+      ? { failureClass: guess, source: 'llm' }
+      : { failureClass: 'UNKNOWN', source: 'rules' };
+  } catch {
+    // A classifier that throws, times out, or is unreachable must never take
+    // the whole run down — an unavailable diagnoser degrades to escalation.
+    return { failureClass: 'UNKNOWN', source: 'rules' };
   }
 }
